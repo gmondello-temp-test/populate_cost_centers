@@ -44,15 +44,24 @@ class ConfigManager:
                 self._prompt_for_token()
             )
             
-            # Enterprise-only setup
+            # Enterprise-only setup with placeholder awareness
+            placeholder_enterprise_values = {"", None, "REPLACE_WITH_ENTERPRISE_SLUG", "your_enterprise_name"}
             self.github_enterprise = (
                 os.getenv("GITHUB_ENTERPRISE") or 
                 github_config.get("enterprise")
             )
+            # If still placeholder, treat as unset
+            if self.github_enterprise in placeholder_enterprise_values:
+                # Try env again explicitly (in case yaml had placeholder overriding)
+                env_val = os.getenv("GITHUB_ENTERPRISE")
+                if env_val and env_val not in placeholder_enterprise_values:
+                    self.github_enterprise = env_val
+                else:
+                    self.github_enterprise = None
             
-            # Validate that enterprise is configured
+            # Validate that enterprise is configured clearly
             if not self.github_enterprise:
-                raise ValueError("GitHub enterprise must be configured")
+                raise ValueError("GitHub enterprise must be configured (set env GITHUB_ENTERPRISE or update config.github.enterprise)")
             
             # Export configuration
             export_config = config_data.get("export", {})

@@ -20,6 +20,9 @@ on:
 jobs:
   update-cost-centers:
     runs-on: ubuntu-latest
+    env:
+      GITHUB_ENTERPRISE: ${{ secrets.GITHUB_ENTERPRISE_NAME }}
+      GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
     
     steps:
     - name: Checkout repository
@@ -34,17 +37,17 @@ jobs:
     - name: Install dependencies
       run: pip install -r requirements.txt
     
-    - name: Create environment file
+    - name: (Optional) Show effective config (debug)
       run: |
-        echo "GITHUB_TOKEN=${{ secrets.COPILOT_GITHUB_TOKEN }}" > .env
-        echo "GITHUB_ENTERPRISE=${{ secrets.GITHUB_ENTERPRISE_NAME }}" >> .env
-    
-    - name: Update config with secrets
-      run: |
-        sed -i 's/REPLACE_WITH_ENTERPRISE_SLUG/${{ secrets.GITHUB_ENTERPRISE_NAME }}/g' config/config.yaml
-        sed -i 's/REPLACE_WITH_NO_PRUS_COST_CENTER_ID/${{ secrets.NO_PRU_COST_CENTER_ID }}/g' config/config.yaml
-        sed -i 's/REPLACE_WITH_PRUS_ALLOWED_COST_CENTER_ID/${{ secrets.PRU_COST_CENTER_ID }}/g' config/config.yaml
-        sed -i 's/auto_create: false/auto_create: true/g' config/config.yaml
+        echo "Enterprise: $GITHUB_ENTERPRISE"
+        grep enterprise config/config.yaml || true
+        python - <<'PY'
+import os, yaml
+with open('config/config.yaml') as f:
+    data = yaml.safe_load(f) or {}
+print('YAML enterprise:', data.get('github', {}).get('enterprise'))
+print('ENV enterprise:', os.getenv('GITHUB_ENTERPRISE'))
+PY
     
     - name: Run incremental cost center update
       if: github.event.inputs.mode != 'full'
