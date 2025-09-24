@@ -16,11 +16,6 @@ on:
         options:
           - incremental
           - full
-      enterprise_slug:
-        description: 'Enterprise slug (required for first run, cached for subsequent runs)'
-        required: false
-        type: string
-        default: ''
 
 jobs:
   update-cost-centers:
@@ -47,57 +42,21 @@ jobs:
         restore-keys: |
           incremental-timestamp-
     
-    - name: Restore enterprise slug from cache
-      uses: actions/cache/restore@v3
-      with:
-        path: .enterprise_slug
-        key: enterprise-slug-${{ github.repository }}
-        
     - name: Configure enterprise slug
       run: |
         echo "=== Enterprise Configuration ==="
         
-        # Check GitHub context for enterprise
-        CONTEXT_ENTERPRISE="${{ github.event.enterprise.slug }}"
-        echo "GitHub context enterprise: '$CONTEXT_ENTERPRISE'"
+        # Use GitHub context for enterprise (automatic detection)
+        ENTERPRISE_SLUG="${{ github.event.enterprise.slug }}"
         
-        # Check if enterprise slug was provided in workflow input
-        INPUT_ENTERPRISE="${{ github.event.inputs.enterprise_slug }}"
-        echo "Workflow input enterprise: '$INPUT_ENTERPRISE'"
-        
-        # Check if we have a cached enterprise slug
-        CACHED_ENTERPRISE=""
-        if [ -f .enterprise_slug ]; then
-          CACHED_ENTERPRISE=$(cat .enterprise_slug)
-          echo "Cached enterprise slug: '$CACHED_ENTERPRISE'"
-        fi
-        
-        # Priority: Context > Input > Cache
-        if [ -n "$CONTEXT_ENTERPRISE" ] && [ "$CONTEXT_ENTERPRISE" != "null" ]; then
-          echo "✅ Using GitHub context enterprise slug: $CONTEXT_ENTERPRISE"
-          ENTERPRISE_SLUG="$CONTEXT_ENTERPRISE"
-        elif [ -n "$INPUT_ENTERPRISE" ]; then
-          echo "✅ Using workflow input enterprise slug: $INPUT_ENTERPRISE"
-          ENTERPRISE_SLUG="$INPUT_ENTERPRISE"
-        elif [ -n "$CACHED_ENTERPRISE" ]; then
-          echo "✅ Using cached enterprise slug: $CACHED_ENTERPRISE"
-          ENTERPRISE_SLUG="$CACHED_ENTERPRISE"
+        if [ -n "$ENTERPRISE_SLUG" ] && [ "$ENTERPRISE_SLUG" != "null" ]; then
+          echo "✅ Auto-detected enterprise slug: $ENTERPRISE_SLUG"
+          echo "GITHUB_ENTERPRISE=$ENTERPRISE_SLUG" >> $GITHUB_ENV
         else
-          echo "❌ No enterprise slug found in context, input, or cache"
-          echo "💡 Please provide enterprise slug in workflow input"
+          echo "❌ Could not auto-detect enterprise slug from GitHub context"
+          echo "💡 This workflow must be run within an enterprise environment"
           exit 1
         fi
-        
-        # Save enterprise slug for future runs
-        echo "$ENTERPRISE_SLUG" > .enterprise_slug
-        echo "GITHUB_ENTERPRISE=$ENTERPRISE_SLUG" >> $GITHUB_ENV
-        echo "Enterprise slug configured: $ENTERPRISE_SLUG"
-        
-    - name: Save enterprise slug to cache
-      uses: actions/cache/save@v3
-      with:
-        path: .enterprise_slug
-        key: enterprise-slug-${{ github.repository }}-${{ github.run_number }}
     
     - name: Run incremental cost center update
       if: github.event.inputs.mode != 'full'
