@@ -38,6 +38,9 @@ jobs:
       run: pip install -r requirements.txt
     
     - name: Show effective config (debug)
+      env:
+        GITHUB_ENTERPRISE: ${{ secrets.GITHUB_ENTERPRISE_NAME }}
+        GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
       run: |
         echo "Enterprise from environment: $GITHUB_ENTERPRISE"
         echo "Enterprise from config file:"
@@ -46,11 +49,17 @@ jobs:
     
     - name: Run incremental cost center update
       if: github.event.inputs.mode != 'full'
+      env:
+        GITHUB_ENTERPRISE: ${{ secrets.GITHUB_ENTERPRISE_NAME }}
+        GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
       run: |
         python main.py --create-cost-centers --assign-cost-centers --incremental --mode apply --yes --summary-report --verbose
     
     - name: Run full cost center update  
       if: github.event.inputs.mode == 'full'
+      env:
+        GITHUB_ENTERPRISE: ${{ secrets.GITHUB_ENTERPRISE_NAME }}
+        GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
       run: |
         python main.py --create-cost-centers --assign-cost-centers --mode apply --yes --summary-report --verbose
     
