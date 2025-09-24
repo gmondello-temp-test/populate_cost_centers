@@ -20,9 +20,6 @@ on:
 jobs:
   update-cost-centers:
     runs-on: ubuntu-latest
-    env:
-      GITHUB_ENTERPRISE: ${{ secrets.GITHUB_ENTERPRISE_NAME }}
-      GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
     
     steps:
     - name: Checkout repository
@@ -37,30 +34,33 @@ jobs:
     - name: Install dependencies
       run: pip install -r requirements.txt
     
-    - name: Show effective config (debug)
+    - name: Detect enterprise and show config (debug)
       env:
-        GITHUB_ENTERPRISE: ${{ secrets.GITHUB_ENTERPRISE_NAME }}
         GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
       run: |
-        echo "Enterprise from environment: $GITHUB_ENTERPRISE"
+        # Extract enterprise from repository owner (works for enterprise-owned repos)
+        ENTERPRISE_NAME="${{ github.repository_owner }}"
+        echo "Auto-detected enterprise: $ENTERPRISE_NAME"
+        echo "Repository: ${{ github.repository }}"
+        echo "Setting GITHUB_ENTERPRISE environment variable..."
+        echo "GITHUB_ENTERPRISE=$ENTERPRISE_NAME" >> $GITHUB_ENV
         echo "Enterprise from config file:"
         grep enterprise config/config.yaml || echo "No enterprise line found"
-        python -c "import os, yaml; data = yaml.safe_load(open('config/config.yaml')) or {}; print('YAML enterprise:', data.get('github', {}).get('enterprise')); print('ENV enterprise:', os.getenv('GITHUB_ENTERPRISE'))"
     
     - name: Run incremental cost center update
       if: github.event.inputs.mode != 'full'
       env:
-        GITHUB_ENTERPRISE: ${{ secrets.GITHUB_ENTERPRISE_NAME }}
         GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
       run: |
+        echo "Using enterprise: $GITHUB_ENTERPRISE"
         python main.py --create-cost-centers --assign-cost-centers --incremental --mode apply --yes --summary-report --verbose
     
     - name: Run full cost center update  
       if: github.event.inputs.mode == 'full'
       env:
-        GITHUB_ENTERPRISE: ${{ secrets.GITHUB_ENTERPRISE_NAME }}
         GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
       run: |
+        echo "Using enterprise: $GITHUB_ENTERPRISE"
         python main.py --create-cost-centers --assign-cost-centers --mode apply --yes --summary-report --verbose
     
     - name: Upload logs
