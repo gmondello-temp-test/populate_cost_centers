@@ -57,25 +57,33 @@ jobs:
       run: |
         echo "=== Enterprise Configuration ==="
         
+        # Check GitHub context for enterprise
+        CONTEXT_ENTERPRISE="${{ github.event.enterprise.slug }}"
+        echo "GitHub context enterprise: '$CONTEXT_ENTERPRISE'"
+        
         # Check if enterprise slug was provided in workflow input
         INPUT_ENTERPRISE="${{ github.event.inputs.enterprise_slug }}"
+        echo "Workflow input enterprise: '$INPUT_ENTERPRISE'"
         
         # Check if we have a cached enterprise slug
         CACHED_ENTERPRISE=""
         if [ -f .enterprise_slug ]; then
           CACHED_ENTERPRISE=$(cat .enterprise_slug)
-          echo "Found cached enterprise slug: $CACHED_ENTERPRISE"
+          echo "Cached enterprise slug: '$CACHED_ENTERPRISE'"
         fi
         
-        # Use input if provided, otherwise use cached value
-        if [ -n "$INPUT_ENTERPRISE" ]; then
+        # Priority: Context > Input > Cache
+        if [ -n "$CONTEXT_ENTERPRISE" ] && [ "$CONTEXT_ENTERPRISE" != "null" ]; then
+          echo "✅ Using GitHub context enterprise slug: $CONTEXT_ENTERPRISE"
+          ENTERPRISE_SLUG="$CONTEXT_ENTERPRISE"
+        elif [ -n "$INPUT_ENTERPRISE" ]; then
           echo "✅ Using workflow input enterprise slug: $INPUT_ENTERPRISE"
           ENTERPRISE_SLUG="$INPUT_ENTERPRISE"
         elif [ -n "$CACHED_ENTERPRISE" ]; then
           echo "✅ Using cached enterprise slug: $CACHED_ENTERPRISE"
           ENTERPRISE_SLUG="$CACHED_ENTERPRISE"
         else
-          echo "❌ No enterprise slug provided and none cached"
+          echo "❌ No enterprise slug found in context, input, or cache"
           echo "💡 Please provide enterprise slug in workflow input"
           exit 1
         fi
