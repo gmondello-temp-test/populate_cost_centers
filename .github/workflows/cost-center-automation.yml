@@ -37,17 +37,12 @@ jobs:
     - name: Install dependencies
       run: pip install -r requirements.txt
     
-    - name: (Optional) Show effective config (debug)
+    - name: Show effective config (debug)
       run: |
-        echo "Enterprise: $GITHUB_ENTERPRISE"
-        grep enterprise config/config.yaml || true
-        python - <<'PY'
-import os, yaml
-with open('config/config.yaml') as f:
-    data = yaml.safe_load(f) or {}
-print('YAML enterprise:', data.get('github', {}).get('enterprise'))
-print('ENV enterprise:', os.getenv('GITHUB_ENTERPRISE'))
-PY
+        echo "Enterprise from environment: $GITHUB_ENTERPRISE"
+        echo "Enterprise from config file:"
+        grep enterprise config/config.yaml || echo "No enterprise line found"
+        python -c "import os, yaml; data = yaml.safe_load(open('config/config.yaml')) or {}; print('YAML enterprise:', data.get('github', {}).get('enterprise')); print('ENV enterprise:', os.getenv('GITHUB_ENTERPRISE'))"
     
     - name: Run incremental cost center update
       if: github.event.inputs.mode != 'full'
