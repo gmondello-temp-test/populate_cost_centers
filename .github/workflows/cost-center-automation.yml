@@ -42,8 +42,9 @@ jobs:
     - name: Update config with secrets
       run: |
         sed -i 's/REPLACE_WITH_ENTERPRISE_SLUG/${{ secrets.GITHUB_ENTERPRISE_NAME }}/g' config/config.yaml
-        sed -i 's/REPLACE_WITH_NO_PRU_COST_CENTER_ID/${{ secrets.NO_PRU_COST_CENTER_ID }}/g' config/config.yaml
-        sed -i 's/REPLACE_WITH_PRU_COST_CENTER_ID/${{ secrets.PRU_COST_CENTER_ID }}/g' config/config.yaml
+        sed -i 's/REPLACE_WITH_NO_PRUS_COST_CENTER_ID/${{ secrets.NO_PRU_COST_CENTER_ID }}/g' config/config.yaml
+        sed -i 's/REPLACE_WITH_PRUS_ALLOWED_COST_CENTER_ID/${{ secrets.PRU_COST_CENTER_ID }}/g' config/config.yaml
+        sed -i 's/auto_create: false/auto_create: true/g' config/config.yaml
     
     - name: Run incremental cost center update
       if: github.event.inputs.mode != 'full'
