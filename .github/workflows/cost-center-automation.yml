@@ -34,18 +34,41 @@ jobs:
     - name: Install dependencies
       run: pip install -r requirements.txt
     
-    - name: Detect enterprise and show config (debug)
+    - name: Test GitHub context and detect enterprise
       env:
         GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
       run: |
-        # Extract enterprise from repository owner (works for enterprise-owned repos)
-        ENTERPRISE_NAME="${{ github.repository_owner }}"
-        echo "Auto-detected enterprise: $ENTERPRISE_NAME"
+        echo "=== GitHub Context Information ==="
         echo "Repository: ${{ github.repository }}"
-        echo "Setting GITHUB_ENTERPRISE environment variable..."
-        echo "GITHUB_ENTERPRISE=$ENTERPRISE_NAME" >> $GITHUB_ENV
-        echo "Enterprise from config file:"
-        grep enterprise config/config.yaml || echo "No enterprise line found"
+        echo "Repository Owner: ${{ github.repository_owner }}"
+        echo "Actor: ${{ github.actor }}"
+        echo "Event Name: ${{ github.event_name }}"
+        echo "Ref: ${{ github.ref }}"
+        echo ""
+        echo "=== API Test: Get Repository Info ==="
+        curl -H "Authorization: token $GITHUB_TOKEN" \
+             -H "Accept: application/vnd.github.v3+json" \
+             "https://api.github.com/repos/${{ github.repository }}" | jq -r '.owner | {login, type, html_url}'
+        echo ""
+        echo "=== Attempting Enterprise Detection ==="
+        REPO_OWNER="${{ github.repository_owner }}"
+        echo "Repository owner: $REPO_OWNER"
+        
+        # Test if this owner is an enterprise by trying to access enterprise API
+        echo "Testing if '$REPO_OWNER' is an enterprise..."
+        ENTERPRISE_TEST=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
+                              -H "Accept: application/vnd.github.v3+json" \
+                              "https://api.github.com/enterprises/$REPO_OWNER" | jq -r '.slug // "NOT_FOUND"')
+        
+        if [ "$ENTERPRISE_TEST" != "NOT_FOUND" ]; then
+          echo "✅ Success: '$REPO_OWNER' is a valid enterprise with slug: $ENTERPRISE_TEST"
+          echo "GITHUB_ENTERPRISE=$REPO_OWNER" >> $GITHUB_ENV
+        else
+          echo "❌ Error: '$REPO_OWNER' is not a valid enterprise slug"
+          echo "This might be a personal account or organization, not an enterprise"
+          echo "Manual enterprise configuration will be needed"
+          exit 1
+        fi
     
     - name: Run incremental cost center update
       if: github.event.inputs.mode != 'full'
