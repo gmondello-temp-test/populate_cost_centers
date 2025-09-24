@@ -15,8 +15,11 @@ cost_centers:
   # List of users to that should be added to cost center to receive PRUs 
   prus_exception_users:
     # Add usernames and uncomment the lines below
-    # - "example.user1"  
-    # - "example.user2"
+     - "mutle"  
+     - "trevrosen"
+     - "abraham"
+     - "krukow"
+     - "nathos"
 
   # Auto-creation settings (creates cost centers if they don't exist)
   auto_create: true  # Auto-create required cost centers if IDs are placeholders
