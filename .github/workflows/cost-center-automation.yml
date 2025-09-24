@@ -65,19 +65,31 @@ jobs:
         ORG_NAME="${{ github.repository_owner }}"
         echo "Organization: $ORG_NAME"
         
-        echo "=== Method 1: Organization API with enterprise scope ==="
+        echo "=== Method 1: Organization API (exact approach from example) ==="
         ORG_RESPONSE=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
                            -H "Accept: application/vnd.github+json" \
-                           -H "X-GitHub-Api-Version: 2022-11-28" \
                            "${{ github.api_url }}/orgs/$ORG_NAME")
-        ENTERPRISE_SLUG=$(echo "$ORG_RESPONSE" | jq -r '.enterprise.slug // "NOT_FOUND"')
-        echo "Organization enterprise field: $ENTERPRISE_SLUG"
+        echo "Raw org response: $ORG_RESPONSE"
         
-        if [ "$ENTERPRISE_SLUG" != "NOT_FOUND" ] && [ "$ENTERPRISE_SLUG" != "null" ]; then
-          echo "✅ Method 1 success: $ENTERPRISE_SLUG"
+        ENTERPRISE_SLUG=$(echo "$ORG_RESPONSE" | jq -r '.enterprise.slug')
+        echo "Enterprise slug (raw): '$ENTERPRISE_SLUG'"
+        
+        # Also try with fallback
+        ENTERPRISE_SLUG_FALLBACK=$(echo "$ORG_RESPONSE" | jq -r '.enterprise.slug // "NOT_FOUND"')
+        echo "Enterprise slug (with fallback): '$ENTERPRISE_SLUG_FALLBACK'"
+        
+        # Test both raw and fallback results
+        if [ "$ENTERPRISE_SLUG" != "null" ] && [ -n "$ENTERPRISE_SLUG" ]; then
+          echo "✅ Method 1 success (raw): $ENTERPRISE_SLUG"
           echo "GITHUB_ENTERPRISE=$ENTERPRISE_SLUG" >> $GITHUB_ENV
           exit 0
+        elif [ "$ENTERPRISE_SLUG_FALLBACK" != "NOT_FOUND" ] && [ "$ENTERPRISE_SLUG_FALLBACK" != "null" ]; then
+          echo "✅ Method 1 success (fallback): $ENTERPRISE_SLUG_FALLBACK"
+          echo "GITHUB_ENTERPRISE=$ENTERPRISE_SLUG_FALLBACK" >> $GITHUB_ENV
+          exit 0
         fi
+        
+        echo "Method 1 failed - no enterprise field found in organization response"
         
         echo "=== Method 2: User API (current authenticated user) ==="
         USER_RESPONSE=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
@@ -95,29 +107,52 @@ jobs:
         echo "Installation response: $INSTALL_RESPONSE"
         
         echo "=== Method 4: Search for enterprise in org memberships ==="
-        # Check current user's organizations to find enterprise links
         USER_ORGS=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
                         -H "Accept: application/vnd.github+json" \
                         -H "X-GitHub-Api-Version: 2022-11-28" \
                         "${{ github.api_url }}/user/orgs")
-        echo "User organizations count: $(echo "$USER_ORGS" | jq '. | length')"
+        echo "User organizations response: $USER_ORGS"
         
-        # Look for enterprise info in any of the user's orgs
-        for org in $(echo "$USER_ORGS" | jq -r '.[].login'); do
-          echo "Checking org: $org"
-          if [ "$org" = "$ORG_NAME" ]; then
-            ORG_DETAIL=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
-                             -H "Accept: application/vnd.github+json" \
-                             -H "X-GitHub-Api-Version: 2022-11-28" \
-                             "${{ github.api_url }}/orgs/$org")
-            ENT_CHECK=$(echo "$ORG_DETAIL" | jq -r '.enterprise.slug // "NOT_FOUND"')
-            if [ "$ENT_CHECK" != "NOT_FOUND" ] && [ "$ENT_CHECK" != "null" ]; then
-              echo "✅ Method 4 success: Found enterprise in org details: $ENT_CHECK"
-              echo "GITHUB_ENTERPRISE=$ENT_CHECK" >> $GITHUB_ENV
-              exit 0
+        if echo "$USER_ORGS" | jq -e '. | type == "array"' > /dev/null 2>&1; then
+          echo "User organizations count: $(echo "$USER_ORGS" | jq '. | length')"
+          # Look for enterprise info in any of the user's orgs
+          for org in $(echo "$USER_ORGS" | jq -r '.[].login'); do
+            echo "Checking org: $org"
+            if [ "$org" = "$ORG_NAME" ]; then
+              ORG_DETAIL=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
+                               -H "Accept: application/vnd.github+json" \
+                               -H "X-GitHub-Api-Version: 2022-11-28" \
+                               "${{ github.api_url }}/orgs/$org")
+              ENT_CHECK=$(echo "$ORG_DETAIL" | jq -r '.enterprise.slug // "NOT_FOUND"')
+              if [ "$ENT_CHECK" != "NOT_FOUND" ] && [ "$ENT_CHECK" != "null" ]; then
+                echo "✅ Method 4 success: Found enterprise in org details: $ENT_CHECK"
+                echo "GITHUB_ENTERPRISE=$ENT_CHECK" >> $GITHUB_ENV
+                exit 0
+              fi
             fi
-          fi
-        done
+          done
+        else
+          echo "User orgs API returned non-array: $USER_ORGS"
+        fi
+        
+        echo "=== Method 5: Reverse lookup from Copilot API ==="
+        # Try to extract enterprise from the actual Copilot API URL we'll be using
+        echo "Testing Copilot seats API for different enterprise possibilities..."
+        
+        # Try the organization name as enterprise
+        TEST_URL="https://api.github.com/enterprises/$ORG_NAME/copilot/billing/seats"
+        echo "Testing: $TEST_URL"
+        COPILOT_TEST=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $GITHUB_TOKEN" \
+                           -H "Accept: application/vnd.github+json" \
+                           -H "X-GitHub-Api-Version: 2022-11-28" \
+                           "$TEST_URL")
+        echo "Response code: $COPILOT_TEST"
+        
+        if [ "$COPILOT_TEST" = "200" ]; then
+          echo "✅ Method 5 success: Organization name works as enterprise slug: $ORG_NAME"
+          echo "GITHUB_ENTERPRISE=$ORG_NAME" >> $GITHUB_ENV
+          exit 0
+        fi
         
         echo "❌ All auto-detection methods failed"
         echo "💡 Solution: Re-run workflow and provide enterprise slug manually"
