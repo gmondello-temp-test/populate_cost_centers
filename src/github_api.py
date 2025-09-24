@@ -355,13 +355,13 @@ class GitHubCopilotManager:
     
     def _find_cost_center_by_name(self, name: str) -> Optional[str]:
         """
-        Find a cost center by name.
+        Find an ACTIVE cost center by name.
         
         Args:
             name: Name of the cost center to find
             
         Returns:
-            Cost center ID if found, None otherwise
+            Cost center ID if found and active, None otherwise
         """
         if not self.use_enterprise or not self.enterprise_name:
             return None
@@ -372,13 +372,32 @@ class GitHubCopilotManager:
             response_data = self._make_request(url)
             cost_centers = response_data.get('costCenters', [])
             
+            active_centers = []
+            deleted_centers = []
+            
             for center in cost_centers:
                 if center.get('name') == name:
+                    status = center.get('state', 'unknown').upper()
                     cost_center_id = center.get('id')
-                    self.logger.info(f"Found existing cost center '{name}' with ID: {cost_center_id}")
-                    return cost_center_id
+                    
+                    if status == 'ACTIVE':
+                        active_centers.append((cost_center_id, center))
+                        self.logger.info(f"Found ACTIVE cost center '{name}' with ID: {cost_center_id}")
+                        return cost_center_id
+                    else:
+                        deleted_centers.append((cost_center_id, status))
+                        self.logger.warning(f"Found INACTIVE cost center '{name}' with ID: {cost_center_id}, status: {status}")
             
-            self.logger.error(f"Cost center '{name}' not found despite 409 conflict")
+            # Log what we found for debugging
+            if deleted_centers:
+                inactive_list = [f"{cc_id} ({status})" for cc_id, status in deleted_centers]
+                self.logger.warning(f"Found {len(deleted_centers)} inactive cost centers with name '{name}': {', '.join(inactive_list)}")
+            
+            if not active_centers and not deleted_centers:
+                self.logger.error(f"No cost center found with name '{name}' (despite 409 conflict)")
+            else:
+                self.logger.error(f"No ACTIVE cost center found with name '{name}' - only inactive ones exist")
+            
             return None
             
         except requests.exceptions.RequestException as e:
