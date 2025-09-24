@@ -1,0 +1,34 @@
+# GitHub Configuration
+github:
+  # IMPORTANT: Do NOT store real tokens in this file. Set GITHUB_TOKEN in your environment instead.
+  # token: "YOUR_TOKEN_HERE"  # (optional fallback, discouraged)
+  
+  # For GitHub Enterprise Cloud - use enterprise name
+  enterprise: "REPLACE_WITH_ENTERPRISE_SLUG"
+
+# Cost Center Settings
+cost_centers:
+  ## update with the ID of the cost center for users who should NOT receive PRUs
+  no_prus_cost_center: "REPLACE_WITH_NO_PRUS_COST_CENTER_ID"    
+
+  ## update with the ID of the cost center for users who should receive PRUs
+  prus_allowed_cost_center: "REPLACE_WITH_PRUS_ALLOWED_COST_CENTER_ID" 
+
+  # List of users to that should be added to cost center to receive PRUs 
+  prus_exception_users:
+    # Add usernames and uncomment the lines below
+    # - "example.user1"  
+    # - "example.user2"
+
+  # Auto-creation settings (creates cost centers if they don't exist)
+  auto_create: false  # Set to true to enable auto-creation
+  no_pru_name: "00 - No PRU overages"  # Name for no-PRU cost center if auto-created
+  pru_allowed_name: "01 - PRU overages allowed"  # Name for PRU-allowed cost center if auto-created
+
+# Logging Configuration
+logging:
+  # Log level: DEBUG, INFO, WARNING, ERROR
+  level: "INFO"
+  
+  # Log file location
+  file: "logs/populate_cost_centers.log"
