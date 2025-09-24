@@ -17,9 +17,10 @@ on:
           - incremental
           - full
       enterprise_slug:
-        description: 'Enterprise slug (optional - auto-detect if blank)'
+        description: 'Enterprise slug (required for first run, cached for subsequent runs)'
         required: false
         type: string
+        default: ''
 
 jobs:
   update-cost-centers:
@@ -46,120 +47,49 @@ jobs:
         restore-keys: |
           incremental-timestamp-
     
+    - name: Restore enterprise slug from cache
+      uses: actions/cache/restore@v3
+      with:
+        path: .enterprise_slug
+        key: enterprise-slug-${{ github.repository }}
+        
     - name: Configure enterprise slug
-      env:
-        GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
       run: |
         echo "=== Enterprise Configuration ==="
         
-        # Check if enterprise slug was provided manually
-        MANUAL_ENTERPRISE="${{ github.event.inputs.enterprise_slug }}"
-        if [ -n "$MANUAL_ENTERPRISE" ]; then
-          echo "✅ Using manually provided enterprise slug: $MANUAL_ENTERPRISE"
-          echo "GITHUB_ENTERPRISE=$MANUAL_ENTERPRISE" >> $GITHUB_ENV
-          exit 0
+        # Check if enterprise slug was provided in workflow input
+        INPUT_ENTERPRISE="${{ github.event.inputs.enterprise_slug }}"
+        
+        # Check if we have a cached enterprise slug
+        CACHED_ENTERPRISE=""
+        if [ -f .enterprise_slug ]; then
+          CACHED_ENTERPRISE=$(cat .enterprise_slug)
+          echo "Found cached enterprise slug: $CACHED_ENTERPRISE"
         fi
         
-        # Try multiple auto-detection methods
-        echo "Attempting auto-detection from multiple sources..."
-        ORG_NAME="${{ github.repository_owner }}"
-        echo "Organization: $ORG_NAME"
-        
-        echo "=== Method 1: Organization API (exact approach from example) ==="
-        ORG_RESPONSE=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
-                           -H "Accept: application/vnd.github+json" \
-                           "${{ github.api_url }}/orgs/$ORG_NAME")
-        echo "Raw org response: $ORG_RESPONSE"
-        
-        ENTERPRISE_SLUG=$(echo "$ORG_RESPONSE" | jq -r '.enterprise.slug')
-        echo "Enterprise slug (raw): '$ENTERPRISE_SLUG'"
-        
-        # Also try with fallback
-        ENTERPRISE_SLUG_FALLBACK=$(echo "$ORG_RESPONSE" | jq -r '.enterprise.slug // "NOT_FOUND"')
-        echo "Enterprise slug (with fallback): '$ENTERPRISE_SLUG_FALLBACK'"
-        
-        # Test both raw and fallback results
-        if [ "$ENTERPRISE_SLUG" != "null" ] && [ -n "$ENTERPRISE_SLUG" ]; then
-          echo "✅ Method 1 success (raw): $ENTERPRISE_SLUG"
-          echo "GITHUB_ENTERPRISE=$ENTERPRISE_SLUG" >> $GITHUB_ENV
-          exit 0
-        elif [ "$ENTERPRISE_SLUG_FALLBACK" != "NOT_FOUND" ] && [ "$ENTERPRISE_SLUG_FALLBACK" != "null" ]; then
-          echo "✅ Method 1 success (fallback): $ENTERPRISE_SLUG_FALLBACK"
-          echo "GITHUB_ENTERPRISE=$ENTERPRISE_SLUG_FALLBACK" >> $GITHUB_ENV
-          exit 0
-        fi
-        
-        echo "Method 1 failed - no enterprise field found in organization response"
-        
-        echo "=== Method 2: User API (current authenticated user) ==="
-        USER_RESPONSE=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
-                            -H "Accept: application/vnd.github+json" \
-                            -H "X-GitHub-Api-Version: 2022-11-28" \
-                            "${{ github.api_url }}/user")
-        echo "User response keys:" $(echo "$USER_RESPONSE" | jq -r 'keys[]' | tr '\n' ' ')
-        
-        echo "=== Method 3: Installation API ==="
-        # Try to get installation info which might include enterprise context
-        INSTALL_RESPONSE=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
-                               -H "Accept: application/vnd.github+json" \
-                               -H "X-GitHub-Api-Version: 2022-11-28" \
-                               "${{ github.api_url }}/repos/${{ github.repository }}/installation" 2>/dev/null || echo '{"error": "no_installation"}')
-        echo "Installation response: $INSTALL_RESPONSE"
-        
-        echo "=== Method 4: Search for enterprise in org memberships ==="
-        USER_ORGS=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
-                        -H "Accept: application/vnd.github+json" \
-                        -H "X-GitHub-Api-Version: 2022-11-28" \
-                        "${{ github.api_url }}/user/orgs")
-        echo "User organizations response: $USER_ORGS"
-        
-        if echo "$USER_ORGS" | jq -e '. | type == "array"' > /dev/null 2>&1; then
-          echo "User organizations count: $(echo "$USER_ORGS" | jq '. | length')"
-          # Look for enterprise info in any of the user's orgs
-          for org in $(echo "$USER_ORGS" | jq -r '.[].login'); do
-            echo "Checking org: $org"
-            if [ "$org" = "$ORG_NAME" ]; then
-              ORG_DETAIL=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
-                               -H "Accept: application/vnd.github+json" \
-                               -H "X-GitHub-Api-Version: 2022-11-28" \
-                               "${{ github.api_url }}/orgs/$org")
-              ENT_CHECK=$(echo "$ORG_DETAIL" | jq -r '.enterprise.slug // "NOT_FOUND"')
-              if [ "$ENT_CHECK" != "NOT_FOUND" ] && [ "$ENT_CHECK" != "null" ]; then
-                echo "✅ Method 4 success: Found enterprise in org details: $ENT_CHECK"
-                echo "GITHUB_ENTERPRISE=$ENT_CHECK" >> $GITHUB_ENV
-                exit 0
-              fi
-            fi
-          done
+        # Use input if provided, otherwise use cached value
+        if [ -n "$INPUT_ENTERPRISE" ]; then
+          echo "✅ Using workflow input enterprise slug: $INPUT_ENTERPRISE"
+          ENTERPRISE_SLUG="$INPUT_ENTERPRISE"
+        elif [ -n "$CACHED_ENTERPRISE" ]; then
+          echo "✅ Using cached enterprise slug: $CACHED_ENTERPRISE"
+          ENTERPRISE_SLUG="$CACHED_ENTERPRISE"
         else
-          echo "User orgs API returned non-array: $USER_ORGS"
+          echo "❌ No enterprise slug provided and none cached"
+          echo "💡 Please provide enterprise slug in workflow input"
+          exit 1
         fi
         
-        echo "=== Method 5: Reverse lookup from Copilot API ==="
-        # Try to extract enterprise from the actual Copilot API URL we'll be using
-        echo "Testing Copilot seats API for different enterprise possibilities..."
+        # Save enterprise slug for future runs
+        echo "$ENTERPRISE_SLUG" > .enterprise_slug
+        echo "GITHUB_ENTERPRISE=$ENTERPRISE_SLUG" >> $GITHUB_ENV
+        echo "Enterprise slug configured: $ENTERPRISE_SLUG"
         
-        # Try the organization name as enterprise
-        TEST_URL="https://api.github.com/enterprises/$ORG_NAME/copilot/billing/seats"
-        echo "Testing: $TEST_URL"
-        COPILOT_TEST=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $GITHUB_TOKEN" \
-                           -H "Accept: application/vnd.github+json" \
-                           -H "X-GitHub-Api-Version: 2022-11-28" \
-                           "$TEST_URL")
-        echo "Response code: $COPILOT_TEST"
-        
-        if [ "$COPILOT_TEST" = "200" ]; then
-          echo "✅ Method 5 success: Organization name works as enterprise slug: $ORG_NAME"
-          echo "GITHUB_ENTERPRISE=$ORG_NAME" >> $GITHUB_ENV
-          exit 0
-        fi
-        
-        echo "❌ All auto-detection methods failed"
-        echo "💡 Solution: Re-run workflow and provide enterprise slug manually"
-        echo "   - Click 'Run workflow'"  
-        echo "   - Fill in 'Enterprise slug' field with your enterprise name"
-        echo "   - The enterprise slug is typically the name after /enterprises/ in your GitHub Enterprise URL"
-        exit 1
+    - name: Save enterprise slug to cache
+      uses: actions/cache/save@v3
+      with:
+        path: .enterprise_slug
+        key: enterprise-slug-${{ github.repository }}-${{ github.run_number }}
     
     - name: Run incremental cost center update
       if: github.event.inputs.mode != 'full'
