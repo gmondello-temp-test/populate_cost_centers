@@ -44,19 +44,15 @@ class ConfigManager:
                 self._prompt_for_token()
             )
             
-            # Support both enterprise and organization setups
+            # Enterprise-only setup
             self.github_enterprise = (
                 os.getenv("GITHUB_ENTERPRISE") or 
                 github_config.get("enterprise")
             )
-            self.github_org = (
-                os.getenv("GITHUB_ORG") or 
-                github_config.get("organization")
-            )
             
-            # Validate that at least one is configured
-            if not self.github_enterprise and not self.github_org:
-                raise ValueError("Either github.enterprise or github.organization must be configured")
+            # Validate that enterprise is configured
+            if not self.github_enterprise:
+                raise ValueError("GitHub enterprise must be configured")
             
             # Export configuration
             export_config = config_data.get("export", {})
@@ -138,14 +134,13 @@ class ConfigManager:
         return token
     
     def _prompt_for_org(self) -> str:
-        """Prompt user for GitHub organization if not found in config."""
+        """Prompt user for GitHub enterprise if not found in config."""
         if not self.github_enterprise:
-            self.logger.error("GitHub organization not found in config or environment variables")
-            org = input("Please enter your GitHub organization name: ").strip()
-            if not org:
-                raise ValueError("GitHub organization is required when not using enterprise")
-            return org
-        return None
+            self.logger.error("GitHub enterprise not found in config or environment variables")
+            enterprise = input("Please enter your GitHub enterprise name: ").strip()
+            if not enterprise:
+                raise ValueError("GitHub enterprise is required")
+            self.github_enterprise = enterprise
     
     def validate_config(self) -> bool:
         """Validate the current configuration."""
@@ -155,8 +150,8 @@ class ConfigManager:
         if not self.github_token:
             issues.append("GitHub token is missing")
         
-        if not self.github_enterprise and not self.github_org:
-            issues.append("Either GitHub enterprise or organization must be configured")
+        if not self.github_enterprise:
+            issues.append("GitHub enterprise must be configured")
         
         # Check if export directory is writable
         export_path = Path(self.export_dir)
@@ -290,7 +285,6 @@ class ConfigManager:
         
         return {
             "github_enterprise": self.github_enterprise,
-            "github_org": self.github_org,
             "github_token_set": bool(self.github_token),
             "export_dir": self.export_dir,
             "export_formats": self.export_formats,

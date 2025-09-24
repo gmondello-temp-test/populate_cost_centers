@@ -21,10 +21,11 @@ class GitHubCopilotManager:
         self.session = self._create_session()
         self.base_url = "https://api.github.com"
         
-        # Determine if we're using enterprise or organization API
-        self.use_enterprise = hasattr(config, 'github_enterprise') and config.github_enterprise
-        self.enterprise_name = getattr(config, 'github_enterprise', None)
-        self.org_name = getattr(config, 'github_org', None)
+        # Enterprise-only API
+        self.use_enterprise = True  
+        self.enterprise_name = config.github_enterprise
+        if not self.enterprise_name:
+            raise ValueError("Enterprise name is required")
         
     def _create_session(self) -> requests.Session:
         """Create a configured requests session with retry logic."""
@@ -72,15 +73,11 @@ class GitHubCopilotManager:
             raise
     
     def get_copilot_users(self) -> List[Dict]:
-        """Get all Copilot license holders in the organization or enterprise."""
-        if self.use_enterprise and self.enterprise_name:
-            self.logger.info(f"Fetching Copilot users for enterprise: {self.enterprise_name}")
-            url = f"{self.base_url}/enterprises/{self.enterprise_name}/copilot/billing/seats"
-        elif self.org_name:
-            self.logger.info(f"Fetching Copilot users for organization: {self.org_name}")
-            url = f"{self.base_url}/orgs/{self.org_name}/copilot/billing/seats"
-        else:
-            raise ValueError("Either github_enterprise or github_org must be configured")
+        """Get all Copilot license holders in the enterprise."""
+        if not (self.use_enterprise and self.enterprise_name):
+            raise ValueError("Enterprise name must be configured to fetch Copilot users")
+        self.logger.info(f"Fetching Copilot users for enterprise: {self.enterprise_name}")
+        url = f"{self.base_url}/enterprises/{self.enterprise_name}/copilot/billing/seats"
         
         all_users = []
         page = 1
@@ -109,8 +106,7 @@ class GitHubCopilotManager:
                     "last_activity_editor": seat.get("last_activity_editor"),
                     "plan": seat.get("plan"),
                     # Enterprise-specific fields
-                    "assigning_team": seat.get("assigning_team"),
-                    "organization": user_info.get("organization") if self.use_enterprise else None
+                    "assigning_team": seat.get("assigning_team")
                 }
                 all_users.append(user_data)
             
@@ -182,41 +178,7 @@ class GitHubCopilotManager:
         url = f"{self.base_url}/users/{username}"
         return self._make_request(url)
     
-    def get_user_org_membership(self, username: str) -> Dict:
-        """Get user's organization membership details."""
-        if not self.org_name:
-            self.logger.warning("No organization configured, skipping org membership check")
-            return {"status": "no_org_configured"}
-            
-        url = f"{self.base_url}/orgs/{self.org_name}/members/{username}"
-        try:
-            return self._make_request(url)
-        except requests.exceptions.HTTPError as e:
-            if e.response.status_code == 404:
-                return {"status": "not_found"}
-            raise
-    
-    def get_user_teams(self, username: str) -> List[Dict]:
-        """Get teams that a user belongs to."""
-        if not self.org_name:
-            self.logger.warning("No organization configured, skipping team membership check")
-            return []
-            
-        url = f"{self.base_url}/orgs/{self.org_name}/teams"
-        all_teams = self._make_request(url)
-        
-        user_teams = []
-        for team in all_teams:
-            # Check if user is member of this team
-            team_url = f"{self.base_url}/orgs/{self.org_name}/teams/{team['slug']}/members/{username}"
-            try:
-                self._make_request(team_url)
-                user_teams.append(team)
-            except requests.exceptions.HTTPError:
-                # User is not a member of this team
-                pass
-        
-        return user_teams
+    # Removed organization/team membership methods for enterprise-only focus
     
     # Removed get_copilot_cost_center_assignments as the tool now always assigns deterministically
     
